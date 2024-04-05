@@ -1,9 +1,10 @@
 import { app } from "/scripts/app.js";
 import { $el, ComfyDialog } from "/scripts/ui.js";
+import { ComfyApp } from "../../scripts/app.js";
 
 var styles = `
 .comfy-carousel {
-	display: none; /* Hidden by default */
+    display: none; /* Hidden by default */
     width: 100%;
     height: 100%;
     position: fixed;
@@ -19,11 +20,11 @@ var styles = `
     margin: 0 auto 20px;
     text-align: center;
 }
-  
+
 .comfy-carousel-box .slides {
     position: relative;
 }
-                
+
 .comfy-carousel-box .slides img {
     display: none;
     max-height: 90vh;
@@ -48,10 +49,28 @@ var styles = `
     content: '❮';
     left: 0;
 }
-  
+
 .comfy-carousel-box .next:before {
     content: '❯';
     right: 0;
+}
+
+.comfy-carousel-box .close:before {
+	color: #fff;
+    font-size: 100px;
+	position: absolute;
+    content: '×';
+	top: 0;
+    right: 0;
+}
+
+.comfy-carousel-box .copy:before {
+	color: #fff;
+    font-size: 100px;
+	position: absolute;
+    content: '📋';
+	bottom: 5%;
+    right: 5%;
 }
 
 .comfy-carousel-box .dots img {
@@ -76,88 +95,145 @@ document.head.appendChild(styleSheet)
 
 class ComfyCarousel extends ComfyDialog {
   constructor() {
-		super();
-		this.element.classList.toggle("comfy-modal");
-		this.element.classList.toggle("comfy-carousel");
+    super();
+    this.element.classList.remove("comfy-modal");
+    this.element.classList.add("comfy-carousel");
     this.element.addEventListener('click', (e) => {
-      this.close();
+      //this.close();
     });
-	}
+    this.onKeydown = this.onKeydown.bind(this);
+  }
   createButtons() {
     return [];
   }
+  getActive() {
+    return this.element.querySelector('.slides > .shown');
+  }
+  selectImage(slide) {
+    let active = this.getActive();
+    if (active) {
+      active.classList.remove('shown');
+      active._dot.classList.remove('active');
+    }
+
+    slide.classList.add('shown');
+    slide._dot.classList.toggle('active');
+  }
+  prevSlide(e) {
+    let active = this.getActive();
+    this.selectImage(active.previousElementSibling || active.parentNode.lastElementChild);
+    e.stopPropagation();
+  }
+  nextSlide(e) {
+    let active = this.getActive();
+    this.selectImage(active.nextElementSibling || active.parentNode.firstElementChild);
+    e.stopPropagation();
+  }
+  
+  copyToClip(e) {
+    let active = this.getActive();
+	const slidess = [...active.parentNode.children];
+    const imageIndex = slidess.indexOf(active);	
+	//console.log("ED_log image_index:" + imageIndex);
+	image_gallery_node.imageIndex = imageIndex;
+    ComfyApp.copyToClipspace(image_gallery_node);
+	ComfyApp.clipspace_return_node = null;
+	image_gallery_node.setDirtyCanvas(true);
+	this.close();    
+    e.stopPropagation();
+  }
+  
+  onKeydown(e) {
+    if (e.key == "Escape")
+      this.close();
+    else if (e.key == "ArrowLeft")
+      this.prevSlide(e);
+    else if (e.key == "ArrowRight")
+      this.nextSlide(e);
+    else if (e.key == "C" || e.key == "c")
+      this.copyToClip(e);
+    else if (e.key == " " || e.key == "Spacebar" || e.key == 32)
+      this.copyToClip(e);
+  }
+  show(images, activeIndex) {
+    let slides = [];
+    let dots = [];
+    for (let image of images) {
+      let slide = image.cloneNode(true);
+      slides.push(slide);
+
+      let dot = image.cloneNode(true);
+      dot.addEventListener('click', (e) => {
+        this.selectImage(slide);
+        e.stopPropagation();
+      }, true);
+      slide._dot = dot;
+      dots.push(dot);
+
+      if (slides.length - 1 == activeIndex)
+        this.selectImage(slide);
+    }
+
+    const carousel = $el("div.comfy-carousel-box", {  }, [
+      $el("div.slides", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }, slides),
+      $el("div.dots", {  }, dots),
+      $el("a.prev", { $: (el) => el.addEventListener('click', (e) => this.prevSlide(e)), }),
+      $el("a.next", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }),
+	  $el("a.close", { $: (el) => el.addEventListener('click', (e) => this.close()), }),
+	  $el("a.copy", { $: (el) => el.addEventListener('click', (e) => this.copyToClip(e)), }),
+    ]);
+    super.show(carousel);
+
+    document.addEventListener("keydown", this.onKeydown);
+    document.activeElement?.blur();
+  }
+  close() {
+    document.removeEventListener("keydown", this.onKeydown);
+    super.close();
+  }
 }
 
+let image_gallery_node;
 app.registerExtension({
   name: "Comfy.ImageGallery",
   init() {
     app.ui.carousel = new ComfyCarousel();
   },
   beforeRegisterNodeDef(nodeType, nodeData) {
-		if (nodeData.name === "SaveImage" || nodeData.name === "PreviewImage") {
-      const getActive = () => {
-        const active = slides.querySelector('.shown');
-        const imageIndex = [...slides.childNodes].indexOf(active);
+    function isImageClick(node, pos) {
+      // This follows the logic of getImageTop() in ComfyUI
+      let imageY;
+      if (node.imageOffset)
+        imageY = node.imageOffset;
+      else if (node.widgets?.length) {
+        const widget = node.widgets[node.widgets.length - 1];
+        imageY = widget.last_y;
+        if (widget.computeSize)
+          imageY += widget.computeSize()[1] + 4;
+        else if (widget.computedHeight)
+          imageY += widget.computedHeight;
+        else
+          imageY += LiteGraph.NODE_WIDGET_HEIGHT + 4;
+      } else
+        imageY = node.computeSize()[1];
 
-        return [active, imageIndex];
-      }
-      const selectImage = (id) => {
-        const [_, imageIndex] = getActive();
-        if (imageIndex !== -1) {
-          slides.childNodes[imageIndex].classList.toggle('shown');
-          dots.childNodes[imageIndex].classList.toggle('active');
-        }
+      return pos[1] >= imageY;
+    }
 
-        slides.childNodes[id].classList.toggle('shown');
-        dots.childNodes[id].classList.toggle('active');
-      }
-      const slideN = (n) => {
-        const [_, imageIndex] = getActive();
-
-        let nth = imageIndex + n;
-        if (nth < 0) nth = slides.childNodes.length - 1;
-        else if (nth >= slides.childNodes.length) nth = 0;
-
-        selectImage(nth);
-      }
-      const prevSlide = (e) => {
-        slideN(-1);
-        e.stopPropagation();
-      }
-      const nextSlide = (e) => {
-        slideN(1);
-        e.stopPropagation();
+    const origOnDblClick = nodeType.prototype.onDblClick;
+    nodeType.prototype.onDblClick = function (e, pos, ...args) {
+      if (this.imgs && this.imgs.length && isImageClick(this, pos)) {
+        let imageIndex = 0;
+        if (this.imageIndex !== null)
+          imageIndex = this.imageIndex;
+        else if (this.overIndex !== null)
+          imageIndex = this.overIndex;
+        image_gallery_node = this;
+		app.ui.carousel.show(this.imgs, imageIndex);
       }
 
-      const slides = $el("div.slides");
-      const dots = $el("div.dots");
-      const carousel = $el("div.comfy-carousel-box", {  }, [
-        slides,
-        dots,
-        $el("a.prev", { $: (el) => el.addEventListener('click', (e) => prevSlide(e), true), }),
-        $el("a.next", { $: (el) => el.addEventListener('click', (e) => nextSlide(e), true), }),
-      ]);
-
-      nodeType.prototype.onMouseUp = function (e, pos, graph) {
-        // remove all child nodes
-        slides.innerHTML = "";
-        dots.innerHTML = "";
-
-        if (this.imgs && this.imgs.length) {
-          for (let imgId in this.imgs) {
-            slides.append(this.imgs[imgId].cloneNode(true));
-
-            let dot = this.imgs[imgId].cloneNode(true);
-            dot.addEventListener('click', (e) => {
-              selectImage(imgId);
-              e.stopPropagation();
-            }, true);
-            dots.append(dot);
-          }
-          selectImage(this.imageIndex || 0);
-          app.ui.carousel.show(carousel);
-        }
-      }
+      if (origOnDblClick)
+        origOnDblClick.call(this, e, pos, ...args);
     }
   },
 });
