@@ -6,4 +6,4 @@ Custom javascript extensions for better UX for ComfyUI.
 
 Supported nodes: `PreviewImage`, `SaveImage`. Double click on image to open.
 
-![tasty-knives-retire-104-198-110-184 loca lt_ (1)](https://user-images.githubusercontent.com/131459485/233774475-de194000-347e-4d75-a9f4-17f84ad735fd.png)
+![tasty-knives-retire-104-198-110-184 loca lt_ (1)](https://github.com/ailex000/ComfyUI-Extensions/assets/43065065/c2b5071c-549a-4839-97f8-b0e5a5e188a5)
