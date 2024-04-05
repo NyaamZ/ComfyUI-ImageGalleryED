@@ -1,5 +1,5 @@
 
-WEB_DIRECTORY = "image-gallery"
+WEB_DIRECTORY = "js"
 
 CC_VERSION = 2.0
 
