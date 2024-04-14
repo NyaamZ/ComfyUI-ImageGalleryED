@@ -23,6 +23,7 @@ var styles = `
 
 .comfy-carousel-box .slides {
     position: relative;
+    cursor: grab;
 }
 
 .comfy-carousel-box .slides img {
@@ -62,21 +63,34 @@ var styles = `
     content: '×';
 	top: 0;
     right: 0;
+    cursor: pointer;
 }
 
 .comfy-carousel-box .copy:before {
 	color: #fff;
-    font-size: 100px;
+    font-size: 65px;
 	position: absolute;
     content: '📋';
-	bottom: 5%;
-    right: 5%;
+	bottom: 6%;
+    right: 9%;
+    cursor: pointer;
+}
+
+.comfy-carousel-box .maskedit:before {
+	color: #fff;
+    font-size: 65px;
+	position: absolute;
+    content: '✒️';
+	bottom: 6%;
+    right: 2%;
+    cursor: pointer;
 }
 
 .comfy-carousel-box .dots img {
     height: 32px;
     margin: 8px 0 0 8px;
     opacity: 0.6;
+    cursor: pointer;
 }
 
 .comfy-carousel-box .dots img:hover {
@@ -85,6 +99,7 @@ var styles = `
 
 .comfy-carousel-box .dots img.active {
     opacity: 1;
+	border: 1px solid white;
 }
 `
 
@@ -98,9 +113,11 @@ class ComfyCarousel extends ComfyDialog {
     super();
     this.element.classList.remove("comfy-modal");
     this.element.classList.add("comfy-carousel");
-    this.element.addEventListener('click', (e) => {
-      //this.close();
-    });
+    //this.element.addEventListener('click', (e) => {  });
+	this.element.addEventListener('wheel', (e) => this.zoomInOut(e));
+	//this.element.addEventListener('pointermove', (e) => this.pointMoveEvent(e));
+	this.element.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+	this.element.addEventListener('pointerup', (e) => this.handlePointerUp(e));
     this.onKeydown = this.onKeydown.bind(this);
   }
   createButtons() {
@@ -112,6 +129,7 @@ class ComfyCarousel extends ComfyDialog {
   selectImage(slide) {
     let active = this.getActive();
     if (active) {
+	  this.initializePanZoom(active);
       active.classList.remove('shown');
       active._dot.classList.remove('active');
     }
@@ -125,10 +143,67 @@ class ComfyCarousel extends ComfyDialog {
     e.stopPropagation();
   }
   nextSlide(e) {
-    let active = this.getActive();
+    let active = this.getActive();	
     this.selectImage(active.nextElementSibling || active.parentNode.firstElementChild);
     e.stopPropagation();
   }
+  
+  zoomInOut(e) {
+	if(event.deltaY < 0) {
+		this.zoom_ratio = Math.min(10.0, this.zoom_ratio+0.2);
+		//console.log("this.zoom_ratio:" + this.zoom_ratio);
+	}
+	else {
+		this.zoom_ratio = Math.max(0.2, this.zoom_ratio-0.2);
+		//console.log("this.zoom_ratio:" + this.zoom_ratio);
+	}
+  this.invalidatePanZoom();
+  } 
+  
+  pointMoveEvent(event) {
+	event.preventDefault();
+	if(event.buttons == 1) {
+		if(this.mousedown_x) {
+			let deltaX = (this.mousedown_x - event.clientX) / this.zoom_ratio;
+			let deltaY = (this.mousedown_y - event.clientY) / this.zoom_ratio;
+			this.pan_x = this.mousedown_pan_x - deltaX;
+			this.pan_y = this.mousedown_pan_y - deltaY;			
+			// console.log("this.pan_x:" + this.pan_x);
+			// console.log("this.pan_y:" + this.pan_y);			
+			this.invalidatePanZoom();
+		}
+	}
+  }  
+  handlePointerDown(event) {
+	if (event.buttons == 1) {
+		this.mousedown_x = event.clientX;
+		this.mousedown_y = event.clientY;
+
+		this.mousedown_pan_x = this.pan_x;
+		this.mousedown_pan_y = this.pan_y;
+	}	
+  }
+  handlePointerUp(event) {
+	event.preventDefault();
+
+	this.mousedown_x = null;
+	this.mousedown_y = null;	
+  }
+  
+  initializePanZoom(active){
+	this.mousedown_x = null;
+	this.mousedown_y = null;
+	this.zoom_ratio = 1.0;
+	this.pan_x = 0;
+	this.pan_y = 0;
+	active.style.transform = `scale(${this.zoom_ratio}) translate(${this.pan_x}px, ${this.pan_y}px)`;
+  }
+  
+  invalidatePanZoom() {
+	let active = this.getActive();
+	active.style.transform = `scale(${this.zoom_ratio}) translate(${this.pan_x}px, ${this.pan_y}px)`;
+  }
+  
   
   copyToClip(e) {
     let active = this.getActive();
@@ -140,6 +215,20 @@ class ComfyCarousel extends ComfyDialog {
 	ComfyApp.clipspace_return_node = null;
 	image_gallery_node.setDirtyCanvas(true);
 	this.close();    
+    e.stopPropagation();
+  }
+
+  openMaskEdit(e) {
+    let active = this.getActive();
+	const slidess = [...active.parentNode.children];
+    const imageIndex = slidess.indexOf(active);	
+	//console.log("ED_log image_index:" + imageIndex);
+	image_gallery_node.imageIndex = imageIndex;
+    ComfyApp.copyToClipspace(image_gallery_node);
+	ComfyApp.clipspace_return_node = image_gallery_node;
+	image_gallery_node.setDirtyCanvas(true);
+	this.close();
+	ComfyApp.open_maskeditor();
     e.stopPropagation();
   }
   
@@ -154,10 +243,16 @@ class ComfyCarousel extends ComfyDialog {
       this.copyToClip(e);
     else if (e.key == " " || e.key == "Spacebar" || e.key == 32)
       this.copyToClip(e);
+    else if (e.key == "M" || e.key == "m")
+      this.openMaskEdit(e);
   }
+  
   show(images, activeIndex) {
     let slides = [];
     let dots = [];
+	this.zoom_ratio = 1.0;
+	this.pan_x = 0;
+	this.pan_y = 0;
     for (let image of images) {
       let slide = image.cloneNode(true);
       slides.push(slide);
@@ -175,12 +270,14 @@ class ComfyCarousel extends ComfyDialog {
     }
 
     const carousel = $el("div.comfy-carousel-box", {  }, [
-      $el("div.slides", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }, slides),
+	$el("div.slides", { $: (el) => el.addEventListener('pointermove', (e) => this.pointMoveEvent(e)), }, slides),
+	  //$el("div.slides", {  }, slides),
       $el("div.dots", {  }, dots),
       $el("a.prev", { $: (el) => el.addEventListener('click', (e) => this.prevSlide(e)), }),
       $el("a.next", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }),
 	  $el("a.close", { $: (el) => el.addEventListener('click', (e) => this.close()), }),
 	  $el("a.copy", { $: (el) => el.addEventListener('click', (e) => this.copyToClip(e)), }),
+	  $el("a.maskedit", { $: (el) => el.addEventListener('click', (e) => this.openMaskEdit(e)), }),
     ]);
     super.show(carousel);
 
