@@ -14,6 +14,10 @@ var styles = `
     align-items: center;
     background: rgba(0,0,0,0.8);
     z-index: 9999;
+	-ms-user-select: none;
+	-webkit-user-select: none;
+	-moz-user-select: -moz-none;
+	user-select: none;
 }
 
 .comfy-carousel-box {
@@ -70,9 +74,9 @@ var styles = `
 	color: #fff;
     font-size: 65px;
 	position: absolute;
-    content: '📋';
+    content: '📇';
 	bottom: 6%;
-    right: 9%;
+    right: 6%;
     cursor: pointer;
 }
 
@@ -80,9 +84,9 @@ var styles = `
 	color: #fff;
     font-size: 65px;
 	position: absolute;
-    content: '✒️';
+    content: '🖌️';
 	bottom: 6%;
-    right: 2%;
+    right: 6%;
     cursor: pointer;
 }
 
@@ -128,8 +132,8 @@ class ComfyCarousel extends ComfyDialog {
   }
   selectImage(slide) {
     let active = this.getActive();
-    if (active) {
-	  this.initializePanZoom(active);
+	this.initializePanZoom(slide);
+    if (active) {	  
       active.classList.remove('shown');
       active._dot.classList.remove('active');
     }
@@ -138,17 +142,20 @@ class ComfyCarousel extends ComfyDialog {
     slide._dot.classList.toggle('active');
   }
   prevSlide(e) {
+	e.preventDefault();
     let active = this.getActive();
     this.selectImage(active.previousElementSibling || active.parentNode.lastElementChild);
     e.stopPropagation();
   }
   nextSlide(e) {
+	e.preventDefault();
     let active = this.getActive();	
     this.selectImage(active.nextElementSibling || active.parentNode.firstElementChild);
     e.stopPropagation();
   }
   
   zoomInOut(e) {
+	e.preventDefault();
 	if(event.deltaY < 0) {
 		this.zoom_ratio = Math.min(10.0, this.zoom_ratio+0.2);
 		//console.log("this.zoom_ratio:" + this.zoom_ratio);
@@ -193,17 +200,15 @@ class ComfyCarousel extends ComfyDialog {
   initializePanZoom(active){
 	this.mousedown_x = null;
 	this.mousedown_y = null;
-	this.zoom_ratio = 1.0;
-	this.pan_x = 0;
-	this.pan_y = 0;
+
 	active.style.transform = `scale(${this.zoom_ratio}) translate(${this.pan_x}px, ${this.pan_y}px)`;
   }
   
   invalidatePanZoom() {
 	let active = this.getActive();
+
 	active.style.transform = `scale(${this.zoom_ratio}) translate(${this.pan_x}px, ${this.pan_y}px)`;
   }
-  
   
   copyToClip(e) {
     let active = this.getActive();
@@ -214,11 +219,15 @@ class ComfyCarousel extends ComfyDialog {
     ComfyApp.copyToClipspace(image_gallery_node);
 	ComfyApp.clipspace_return_node = null;
 	image_gallery_node.setDirtyCanvas(true);
-	this.close();    
+	let load_image_ed = app.graph._nodes.find((n) => n.type === "Load Image 💬ED");
+	if (load_image_ed) {		
+		ComfyApp.pasteFromClipspace(load_image_ed);
+	}	
+	this.close();
     e.stopPropagation();
   }
 
-  openMaskEdit(e) {
+  openMaskEditor(e) {
     let active = this.getActive();
 	const slidess = [...active.parentNode.children];
     const imageIndex = slidess.indexOf(active);	
@@ -239,12 +248,18 @@ class ComfyCarousel extends ComfyDialog {
       this.prevSlide(e);
     else if (e.key == "ArrowRight")
       this.nextSlide(e);
-    else if (e.key == "C" || e.key == "c")
+	else if (e.key == "ArrowUp"){
+      this.zoom_ratio = Math.min(10.0, this.zoom_ratio+0.2);
+	  this.invalidatePanZoom();
+	}
+    else if (e.key == "ArrowDown"){
+      this.zoom_ratio = Math.max(0.2, this.zoom_ratio-0.2);
+      this.invalidatePanZoom();
+	}
+    else if (!is_load_image_node && (e.key == " " || e.key == "Spacebar" || e.key == 32 || e.key == "C" || e.key == "c"))
       this.copyToClip(e);
-    else if (e.key == " " || e.key == "Spacebar" || e.key == 32)
-      this.copyToClip(e);
-    else if (e.key == "M" || e.key == "m")
-      this.openMaskEdit(e);
+    else if (is_load_image_node && (e.key == "M" || e.key == "m"))
+      this.openMaskEditor(e);
   }
   
   show(images, activeIndex) {
@@ -268,17 +283,31 @@ class ComfyCarousel extends ComfyDialog {
       if (slides.length - 1 == activeIndex)
         this.selectImage(slide);
     }
-
-    const carousel = $el("div.comfy-carousel-box", {  }, [
-	$el("div.slides", { $: (el) => el.addEventListener('pointermove', (e) => this.pointMoveEvent(e)), }, slides),
-	  //$el("div.slides", {  }, slides),
-      $el("div.dots", {  }, dots),
-      $el("a.prev", { $: (el) => el.addEventListener('click', (e) => this.prevSlide(e)), }),
-      $el("a.next", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }),
-	  $el("a.close", { $: (el) => el.addEventListener('click', (e) => this.close()), }),
-	  $el("a.copy", { $: (el) => el.addEventListener('click', (e) => this.copyToClip(e)), }),
-	  $el("a.maskedit", { $: (el) => el.addEventListener('click', (e) => this.openMaskEdit(e)), }),
-    ]);
+	
+	let carousel;
+	if (is_load_image_node) {
+		carousel = $el("div.comfy-carousel-box", {  }, [
+		$el("div.slides", { $: (el) => el.addEventListener('pointermove', (e) => this.pointMoveEvent(e)), }, slides),
+		//$el("div.slides", {  }, slides),
+		$el("div.dots", {  }, dots),
+		$el("a.prev", { $: (el) => el.addEventListener('click', (e) => this.prevSlide(e)), }),
+		$el("a.next", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }),
+		$el("a.close", { $: (el) => el.addEventListener('click', (e) => this.close()), }),
+		//$el("a.copy", { $: (el) => el.addEventListener('click', (e) => this.copyToClip(e)), }),
+		$el("a.maskedit", { $: (el) => el.addEventListener('click', (e) => this.openMaskEditor(e)), }),
+		]);
+	}
+	else{
+		carousel = $el("div.comfy-carousel-box", {  }, [
+		$el("div.slides", { $: (el) => el.addEventListener('pointermove', (e) => this.pointMoveEvent(e)), }, slides),
+		$el("div.dots", {  }, dots),
+		$el("a.prev", { $: (el) => el.addEventListener('click', (e) => this.prevSlide(e)), }),
+		$el("a.next", { $: (el) => el.addEventListener('click', (e) => this.nextSlide(e)), }),
+		$el("a.close", { $: (el) => el.addEventListener('click', (e) => this.close()), }),
+		$el("a.copy", { $: (el) => el.addEventListener('click', (e) => this.copyToClip(e)), }),
+		]);
+	}
+	
     super.show(carousel);
 
     document.addEventListener("keydown", this.onKeydown);
@@ -291,6 +320,8 @@ class ComfyCarousel extends ComfyDialog {
 }
 
 let image_gallery_node;
+let is_load_image_node;
+
 app.registerExtension({
   name: "Comfy.ImageGallery",
   init() {
@@ -326,6 +357,7 @@ app.registerExtension({
         else if (this.overIndex !== null)
           imageIndex = this.overIndex;
         image_gallery_node = this;
+		is_load_image_node = (image_gallery_node.type.indexOf("Load Image") != -1);
 		app.ui.carousel.show(this.imgs, imageIndex);
       }
 
